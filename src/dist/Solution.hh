@@ -22,6 +22,7 @@ class Solution {
 
         int _bdwt;
         int _load;
+        int _homothre; //means threhold in homogeneous or maxload in hetergeneous
 
     public:
         Solution(bool type);
@@ -42,6 +43,8 @@ class Solution {
         int getBdwt();
         void setLoad(int load);
         int getLoad();
+        void sethomothre(int homothre);
+        int gethomothre();
         int getDigits();
 
         bool isHead();
