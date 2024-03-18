@@ -4,6 +4,7 @@
 #include "common/StripeStore.hh"
 #include "protocol/AGCommand.hh"
 #include "util/DistUtil.hh"
+#include "common/Bandwidth.hh"
 
 #include "ec/Clay.hh"
 #include "ec/BUTTERFLY.hh"
@@ -23,7 +24,8 @@ void usage() {
   cout << "    5. repairIdx" << endl;
 }  
 
-void stat(unordered_map<int, int> sidx2ip, vector<int> curres, vector<int> itm_idx, ECDAG* ecdag, int* bdwt, int* maxload) {
+void stat1(unordered_map<int, int> sidx2ip, vector<int> curres, vector<int> itm_idx, ECDAG* ecdag, int* bdwt,
+    int* maxload, int* homothre, unordered_map<int, pair<double, double>>& id2bdwt) {
 
     unordered_map<int, int> coloring_res;
     for (auto item: sidx2ip) {
@@ -59,6 +61,12 @@ void stat(unordered_map<int, int> sidx2ip, vector<int> curres, vector<int> itm_i
     //  cout << "  " << item.first << ": " << item.second << endl;
     //}
 
+    //
+
+    
+
+    //
+
     int bw=0, max=0;
     for (auto item: inmap) {
       bw+= item.second;
@@ -70,8 +78,99 @@ void stat(unordered_map<int, int> sidx2ip, vector<int> curres, vector<int> itm_i
         max = item.second;
     }
 
+    int thremax=INT_MAX;
+    for (auto item: inmap) {
+    // cout << item.first << endl;
+      if (item.second == 0) continue;
+      if (id2bdwt[item.first].first  / item.second < thremax)
+        thremax = id2bdwt[item.first].first  / item.second;
+        // cout << max << endl;
+    }
+    for (auto item: outmap) {
+      if (item.second == 0) continue;
+      if (id2bdwt[item.first].second  / item.second < thremax)
+        thremax = id2bdwt[item.first].second  / item.second;
+        //  cout << max << endl;
+    }
+    
+
+
+    *homothre = thremax;
     *bdwt = bw;
     *maxload = max;
+}
+
+void stat(unordered_map<int, int> sidx2ip, vector<int> curres, vector<int> itm_idx, ECDAG* ecdag, int* bdwt, int* maxload, int* heterload, unordered_map<int, pair<double, double>>& id2bdwt) {
+
+    unordered_map<int, int> coloring_res;
+    for (auto item: sidx2ip) {
+      coloring_res.insert(make_pair(item.first, item.second));
+    }
+    for (int ii=0; ii<curres.size(); ii++) {
+      int idx = itm_idx[ii];
+      int color = curres[ii];
+      coloring_res[idx] = color;
+    }
+
+    //cout << "current coloring:  " << endl;
+    //for (auto item: coloring_res) {
+    //  cout << "  " << item.first << ", " << item.second << endl;
+    //}
+
+    // gen ECClusters
+    ecdag->clearECCluster();
+    ecdag->genECCluster(coloring_res, CLUSTERSIZE);
+    
+    // gen stat
+    unordered_map<int, int> inmap;
+    unordered_map<int, int> outmap;
+    ecdag->genStat(coloring_res, inmap, outmap);
+
+    //cout << "inmap: " << endl;
+    //for (auto item: inmap) {
+    //  cout << "  " << item.first << ": " << item.second << endl;
+    //}
+
+    //cout << "outmap: " << endl;
+    //for (auto item: outmap) {
+    //  cout << "  " << item.first << ": " << item.second << endl;
+    //}
+
+    //
+
+    
+
+    //
+
+    int bw=0, max=INT_MAX;
+    for (auto item: inmap) {
+    // cout << item.first << endl;
+      bw+= item.second;
+      if (item.second == 0) continue;
+      if (id2bdwt[item.first].first  / item.second < max)
+        max = id2bdwt[item.first].first  / item.second;
+        // cout << max << endl;
+    }
+    for (auto item: outmap) {
+      if (item.second == 0) continue;
+      if (id2bdwt[item.first].second  / item.second < max)
+        max = id2bdwt[item.first].second  / item.second;
+        //  cout << max << endl;
+    }
+
+    int loadmax = 0;
+    for (auto item: inmap) {
+      if (item.second > loadmax)
+        loadmax = item.second;
+    }
+    for (auto item: outmap) {
+      if (item.second > loadmax)
+        loadmax = item.second;
+    }
+
+    *bdwt = bw;
+    *maxload = 0 - max;
+    *heterload = loadmax;
 }
 
 double percentage(double found, double total) {  
@@ -239,10 +338,10 @@ bool updateTradeoffCurve(Solution* head, Solution* tail, Solution* sol,
     return status;
 }
 
-void expand(Solution* current, int v, int m, unordered_map<string, bool>& visited,
+void expand1(Solution* current, int v, int m, unordered_map<string, bool>& visited,
         unordered_map<int, int> sidx2ip, vector<int> itm_idx, ECDAG* ecdag,
         unordered_map<int, int>& load2bdwt, unordered_map<int, int>& bdwt2load,
-        Solution* tradeoff_curve_head, Solution* tradeoff_curve_tail) {
+        Solution* tradeoff_curve_head, Solution* tradeoff_curve_tail, unordered_map<int, pair<double, double>>& id2bdwt) {
     //cout << "    expand: " << current->getString() << ", load: " << current->getLoad() << ", bdwt: " << current->getBdwt() << endl;
 
     vector<int> solution = current->getSolution();
@@ -269,10 +368,11 @@ void expand(Solution* current, int v, int m, unordered_map<string, bool>& visite
             } else {
                 // this solution hasn't been visited before
                 // get stat for the neighbor
-                int neighbor_bdwt, neighbor_load;
-                stat(sidx2ip, neighbor->getSolution(), itm_idx, ecdag, &neighbor_bdwt, &neighbor_load);
+                int neighbor_bdwt, neighbor_load, homothre;
+                stat1(sidx2ip, neighbor->getSolution(), itm_idx, ecdag, &neighbor_bdwt, &neighbor_load, &homothre,id2bdwt);
                 neighbor->setBdwt(neighbor_bdwt);
                 neighbor->setLoad(neighbor_load);
+                neighbor->sethomothre(homothre);
                 visited.insert(make_pair(tmps, true));
                 //cout << "        load: " << neighbor->getLoad() << ", bdwt: " << neighbor->getBdwt() << endl;
 
@@ -315,8 +415,86 @@ void expand(Solution* current, int v, int m, unordered_map<string, bool>& visite
     }
 }
 
-Solution* genTradeoffCurve(vector<int> itm_idx, vector<int> candidates,
-        unordered_map<int, int> sidx2ip, ECDAG* ecdag) {
+
+void expand(Solution* current, int v, int m, unordered_map<string, bool>& visited,
+        unordered_map<int, int> sidx2ip, vector<int> itm_idx, ECDAG* ecdag,
+        unordered_map<int, int>& load2bdwt, unordered_map<int, int>& bdwt2load,
+        Solution* tradeoff_curve_head, Solution* tradeoff_curve_tail, unordered_map<int, pair<double, double>>& id2bdwt) {
+    //cout << "    expand: " << current->getString() << ", load: " << current->getLoad() << ", bdwt: " << current->getBdwt() << endl;
+
+    vector<int> solution = current->getSolution();
+    current->setExpanded(true);
+
+    for (int i=0; i<v; i++) {
+        int oldv = solution[i];
+        for (int j=0; j<m; j++) {
+            if (j == oldv)
+                continue;
+            // update the color of one vertex
+            solution[i] = j;
+            Solution* neighbor = new Solution(v, m, solution);
+            string tmps = neighbor->getString();
+            //cout << "      neighbor: " << tmps << endl;
+            
+            Solution* current = tradeoff_curve_head;
+
+            // check whether the neighbor has been visited
+            if (visited.find(tmps) != visited.end()) {
+                // this solution has been visited
+                //cout << "        visited, skip" << endl;
+                delete neighbor;
+            } else {
+                // this solution hasn't been visited before
+                // get stat for the neighbor
+                int neighbor_bdwt, neighbor_load, heterload;
+                stat(sidx2ip, neighbor->getSolution(), itm_idx, ecdag, &neighbor_bdwt, &neighbor_load, &heterload, id2bdwt);
+                neighbor->setBdwt(neighbor_bdwt);
+                neighbor->setLoad(neighbor_load);
+                neighbor->sethomothre(heterload);
+                visited.insert(make_pair(tmps, true));
+                //cout << "        load: " << neighbor->getLoad() << ", bdwt: " << neighbor->getBdwt() << endl;
+
+                // now we check whether the current neighbor can update
+                // the tradeoff_curve. we first do a quick search
+                if (load2bdwt.find(neighbor_load) != load2bdwt.end()) {
+                    // a point of the same load exists in the tradeoff curve
+                    if (load2bdwt[neighbor_load] <= neighbor_bdwt) {
+                        // neighbor cannot update the tradeoff_curve
+                        //cout << "          curve bdwt: " << load2bdwt[neighbor_load] << " is better, skip the neighbor" << endl;
+                        delete neighbor;
+                        neighbor = NULL;
+                    }
+                } else if (bdwt2load.find(neighbor_bdwt) != bdwt2load.end()) {
+                    // a point of the same bdwt exists in the tradeoff curve
+                    if (bdwt2load[neighbor_bdwt] <= neighbor_load) {
+                        // neighbor cannot update the tradeoff curve
+                        //cout << "          curve load: " << bdwt2load[neighbor_bdwt] << " is better, skip the neighbor" << endl;
+                        delete neighbor;
+                        neighbor = NULL;
+                    }
+                } 
+                
+                // neighbor_bdwt or neighbor_load is new
+                // we iterate the tradeoff curve to insert the neighbor and
+                // update two maps
+                if (neighbor) {
+                    if(!updateTradeoffCurve(tradeoff_curve_head, tradeoff_curve_tail, neighbor, load2bdwt, bdwt2load)) {
+                        delete neighbor;
+                        neighbor = NULL;
+                    } else {
+                        //cout << "update tradeoff curve at i: " << i << ", j: " << j << endl;
+                    }
+                }
+
+                current = tradeoff_curve_head;
+            }
+        }
+        solution[i] = oldv;
+    }
+}
+
+Solution* genTradeoffCurve1(vector<int> itm_idx, vector<int> candidates,
+        unordered_map<int, int> sidx2ip, ECDAG* ecdag, unordered_map<int, pair<double, double>>& id2bdwt) {
     // 0. initialize a head and tail with NULL for the tradeoff curve
     Solution* head = new Solution(true);
     Solution* tail = new Solution(false);
@@ -334,10 +512,89 @@ Solution* genTradeoffCurve(vector<int> itm_idx, vector<int> candidates,
     // 1.1 get stat for the init_sol
     int v = itm_idx.size();
     int m = candidates.size();
-    int init_bdwt, init_load;
-    stat(sidx2ip, init_sol->getSolution(), itm_idx, ecdag, &init_bdwt, &init_load);
+    int init_bdwt, init_load, homothre;
+    stat1(sidx2ip, init_sol->getSolution(), itm_idx, ecdag, &init_bdwt, &init_load, &homothre, id2bdwt);
     init_sol->setBdwt(init_bdwt);
     init_sol->setLoad(init_load);
+    init_sol->sethomothre(homothre);
+    cout << "genTradeoffCurve1: init_sol: " << init_sol->getString() << ", load: " << init_sol->getLoad() << ", bdwt: " << init_sol->getBdwt() << endl;
+
+    // 2. generate a map that records the solution that we visited.
+    unordered_map<string, bool> visited;
+    visited.insert(make_pair(init_sol->getString(), true));
+
+    // 3. generate load2bdwt and bdwt2load map
+    unordered_map<int, int> load2bdwt;
+    unordered_map<int, int> bdwt2load;
+    load2bdwt.insert(make_pair(init_load, init_bdwt));
+    bdwt2load.insert(make_pair(init_bdwt, init_load));
+
+    // 4. each time we choose the first solution in the tradeoff curve that
+    // hasn't been expanded
+    Solution* current;
+    while (true) {
+        current = head->getNext();
+
+        cout << "head: load = " << current->getLoad() << ", bdwt = " << current->getBdwt() << ", string = " << current->getString() << endl;
+
+        // find the first solution that not expanded
+        while (current != tail) {
+            //cout << "  iterate: " << current->getString() << ", load: " << current->getLoad() << ", bdwt: " << current->getBdwt() << endl;
+            if (current->getExpanded()) {
+                //cout << "    expanded, skip" << endl;
+                current = current->getNext();
+            } else {
+                //cout << "    not expanded" << endl;
+                break;
+            }
+        }
+
+        if (current == tail) {
+            // all the solutions has been expanded
+            //cout << "  reach the tail" << endl;
+            break;
+        }
+
+        // now we expand the current solution
+        expand1(current, v, m, visited, sidx2ip, itm_idx, ecdag, load2bdwt, bdwt2load, head, tail, id2bdwt);
+
+    }
+
+    cout << "Current tradeoff curve: ";
+    current = head;
+    while(current) {
+       cout << current->getString() << "; ";
+       current = current->getNext();
+    }
+    cout << endl;
+
+    return head;
+}
+
+Solution* genTradeoffCurve(vector<int> itm_idx, vector<int> candidates,
+        unordered_map<int, int> sidx2ip, ECDAG* ecdag, unordered_map<int, pair<double, double>>& id2bdwt) {
+    // 0. initialize a head and tail with NULL for the tradeoff curve
+    Solution* head = new Solution(true);
+    Solution* tail = new Solution(false);
+
+    head->setNext(tail);
+    tail->setPrev(head);
+
+    // 1. randomly select a solution and insert it into the tradeoff curve
+    Solution* init_sol = new Solution(itm_idx.size(), candidates.size());
+    head->setNext(init_sol);
+    init_sol->setPrev(head);
+    init_sol->setNext(tail);
+    tail->setPrev(init_sol);
+
+    // 1.1 get stat for the init_sol
+    int v = itm_idx.size();
+    int m = candidates.size();
+    int init_bdwt, init_load, heterload;
+    stat(sidx2ip, init_sol->getSolution(), itm_idx, ecdag, &init_bdwt, &init_load, &heterload, id2bdwt);
+    init_sol->setBdwt(init_bdwt);
+    init_sol->setLoad(init_load);
+    init_sol->sethomothre(heterload);
     cout << "genTradeoffCurve: init_sol: " << init_sol->getString() << ", load: " << init_sol->getLoad() << ", bdwt: " << init_sol->getBdwt() << endl;
 
     // 2. generate a map that records the solution that we visited.
@@ -377,17 +634,17 @@ Solution* genTradeoffCurve(vector<int> itm_idx, vector<int> candidates,
         }
 
         // now we expand the current solution
-        expand(current, v, m, visited, sidx2ip, itm_idx, ecdag, load2bdwt, bdwt2load, head, tail);
+        expand(current, v, m, visited, sidx2ip, itm_idx, ecdag, load2bdwt, bdwt2load, head, tail, id2bdwt);
 
     }
 
-    //cout << "Current tradeoff curve: ";
-    //current = head;
-    //while(current) {
-    //    cout << current->getString() << "; ";
-    //    current = current->getNext();
-    //}
-    //cout << endl;
+    cout << "Current tradeoff curve: ";
+    current = head;
+    while(current) {
+       cout << current->getString() << "; ";
+       current = current->getNext();
+    }
+    cout << endl;
 
     return head;
 }
@@ -404,9 +661,9 @@ int getLength(Solution* head) {
     return size;
 }
 
-Solution* genSol(vector<int> itm_idx, vector<int> candidates,
+Solution* genSol1(vector<int> itm_idx, vector<int> candidates,
         unordered_map<int, int> sidx2ip, ECDAG* ecdag,
-        int rounds, int target_load, int target_bdwt, int conv) {
+        int rounds, int target_load, int target_bdwt, int conv,  unordered_map<int, pair<double, double>>& id2bdwt) {
 
     Solution* sol = NULL;
     Solution* head;
@@ -417,7 +674,7 @@ Solution* genSol(vector<int> itm_idx, vector<int> candidates,
 
     int i=0;
     while (true) {
-        head = genTradeoffCurve(itm_idx, candidates, sidx2ip, ecdag);
+        head = genTradeoffCurve1(itm_idx, candidates, sidx2ip, ecdag, id2bdwt);
         bool find = false;
         s == NULL;
 
@@ -491,8 +748,97 @@ Solution* genSol(vector<int> itm_idx, vector<int> candidates,
     return sol;
 }
 
+
+Solution* genSol2(vector<int> itm_idx, vector<int> candidates,
+        unordered_map<int, int> sidx2ip, ECDAG* ecdag,
+        int rounds, int homothre, int target_bdwt, int conv, unordered_map<int, pair<double, double>>& id2bdwt) {
+
+    Solution* sol = NULL;
+    Solution* head;
+    Solution* s;
+    Solution* cur;
+    Solution* next;
+    bool init = false;
+
+    int i=0;
+    while (true) {
+        head = genTradeoffCurve(itm_idx, candidates, sidx2ip, ecdag, id2bdwt);
+        bool find = false;
+        s == NULL;
+
+        // iterate the tradeoff line
+        cur = head->getNext();
+        while (cur) {
+            int load = cur->getLoad();
+            int bdwt = cur->getBdwt();
+            int heterload = cur->gethomothre();
+            //cout << "load: " << load << ", bdwt: " << bdwt << endl;
+
+            if (load == 0 && bdwt == 0) {
+                // reach the tail
+                delete cur;
+                break;
+            } 
+
+            // check whether current solution is good enough
+            if (bdwt < target_bdwt && load <= homothre && bdwt >= conv && heterload < conv) {
+                //cout << "  yes" << endl;
+                find = true;
+                s = cur;
+
+                // now we delete the remainings
+                cur = cur->getNext();
+                while (cur) {
+                    next = cur->getNext();
+                    delete cur;
+                    cur = next;
+                }
+
+            } else {
+                //cout << "  no" << endl;
+                // the current solution is worse than ecpipe
+                next = cur->getNext();
+                delete cur;
+                cur = next;
+            }
+
+        }
+
+        //  now we find a solution, compare it with sol
+        if (find) {
+            if (sol == NULL)
+                sol = s;
+            else {
+                if (s->getLoad() < sol->getLoad()) {
+                    delete sol;
+                    sol = s;
+                } else {
+                    delete s;
+                }
+            }
+        }
+
+        if (sol == NULL) {
+            //cout <<  "-----" << endl;
+        } else {
+            cout << "  sol: load =  " << sol->getLoad() << ", bdwt: " << sol->getBdwt() << endl;
+        }
+
+        i++;
+
+        if (find && i>rounds) {
+            break;
+        }
+
+    }
+
+    cout << "i = " << i-1 << endl;
+
+    return sol;
+}
+
 Solution* getMLP(vector<int> itm_idx, vector<int> candidates,
-        unordered_map<int, int> sidx2ip, ECDAG* ecdag, int rounds, int target_load, int target_bdwt, string terminatestr) {
+        unordered_map<int, int> sidx2ip, ECDAG* ecdag, int rounds, int target_load, int target_bdwt, string terminatestr, unordered_map<int, pair<double, double>>& id2bdwt) {
     
     Solution* prev_sol;
     Solution* cur_sol;
@@ -506,7 +852,7 @@ Solution* getMLP(vector<int> itm_idx, vector<int> candidates,
     int mlp_bdwt = -1;
 
     while (true) {
-        Solution* head = genTradeoffCurve(itm_idx, candidates, sidx2ip, ecdag);
+        Solution* head = genTradeoffCurve(itm_idx, candidates, sidx2ip, ecdag, id2bdwt);
         
         // get the mlp 
         cur_sol = head->getNext();
@@ -723,10 +1069,10 @@ int main(int argc, char** argv) {
   //  cout << itm_idx[i] << " ";
   //cout << endl;
 
-  // cout << "before coloring the intermediate vertex: " << endl;
-  // for (auto item: sidx2ip) {
-  //   cout << "  " << item.first << ": " << item.second << endl;
-  // }
+//   cout << "before coloring the intermediate vertex: " << endl;
+//   for (auto item: sidx2ip) {
+//     cout << "  " << item.first << ": " << item.second << endl;
+//   }
 
   // cout << "intermediate vertex: ";
   // for (auto idx: itm_idx)
@@ -763,7 +1109,20 @@ int main(int argc, char** argv) {
 
   struct timeval time1, time2;
   gettimeofday(&time1, NULL);
-  Solution* mlp = genSol(itm_idx, candidates, sidx2ip, ecdag, round, w, k*w, realLeaves);
+
+      string bdwtfilepath="conf/bandwidth.xml";
+    // cout << "start to read bdwt \n";
+    Bandwidth* bdwt = new Bandwidth(bdwtfilepath);
+    unordered_map<int, pair<double, double>> id2bdwt = bdwt->_ip2bdwt;
+    // for (auto bdwt:id2bdwt) {
+    //     int Index = bdwt.first;
+    //     std::cout << Index << ":" << bdwt.second.second << "," << bdwt.second.second << std::endl;
+    // }
+  Solution* homomlp = genSol1(itm_idx, candidates, sidx2ip, ecdag, round, w, k*w, realLeaves, id2bdwt);
+  int homothre = homomlp -> gethomothre();
+  cout << "homothre: " << homothre << endl;
+  homothre = -homothre;
+  Solution* mlp = genSol2(itm_idx, candidates, sidx2ip, ecdag, round, homothre, k*w, realLeaves, id2bdwt);
   gettimeofday(&time2, NULL);
   double latency = DistUtil::duration(time1, time2);
   cout << "Runtime: " << latency << endl;
