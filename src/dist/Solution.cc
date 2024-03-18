@@ -14,6 +14,7 @@ Solution::Solution(bool ishead) {
 
     _load = 0;
     _bdwt = 0;
+    
 }
 
 Solution::Solution(int v, int m) {
@@ -108,6 +109,13 @@ void Solution::setLoad(int load) {
 
 int Solution::getLoad() {
     return _load;
+}
+
+void Solution::sethomothre(int homothre){
+    _homothre = homothre;
+}
+int Solution::gethomothre(){
+    return _homothre;
 }
 
 int Solution::getDigits() {
