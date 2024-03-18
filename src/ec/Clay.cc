@@ -90,7 +90,28 @@ Clay::Clay(int n, int k, int w, vector<string> param) {
             _real2short[virRealSubPktIdx] = virShortSubPktIdx;
         }
     }
+    // get pair-wise information
+    for (int y=0; y<_t; y++) {
+        for (int x=0; x<_q; x++) {
+            int node_xy = y*_q + x;
+            for (int z=0; z<_w; z++) {
+                int z_vec[_t];
+                get_plane_vector(z, z_vec);
+                //cout << "node_xy = " << node_xy << ", z = " << z << ", z_vec = ( ";
+                //for (int i=0; i<_t; i++)
+                //    cout << z_vec[i] << " ";
+                //cout << ")" << endl;
 
+                int idx = node_xy * _w + z;
+                int pidx = idx + (_n+_nu) * _w;
+
+                if (z_vec[y] == x) {
+                    //cout << "  " << idx << " and " << pidx << " unpaired" << endl;
+                    _identical.insert(make_pair(pidx, idx));
+                }
+            }
+        }
+    }
     cout << "Clay::Clay() k:" << _k << ", m:" << _m << ", d:" << _d << ", q:" << _q << ", t: " << _t << ", subchunkno:"<<_sub_chunk_no << endl;
     cout << "Clay::Clay() mds_k:" <<_mds_k << ", mds_m:" << _mds_m << endl;
     cout << "Clay::Clay() pft_k:" <<_pft_k << ", pft_m:" << _pft_m << endl;
@@ -159,6 +180,7 @@ void Clay::get_plane_vector(int z, int* z_vec) {
 }
 
 ECDAG* Clay::Encode() {
+    _encode = true;
     ECDAG* ecdag = new ECDAG();
 
     vector<int> erased_chunks;
@@ -237,7 +259,7 @@ ECDAG* Clay::Encode() {
                         int real_coupled_idx = get_real_from_short(coupled_idx);
                         int real_uncoupled_idx = get_real_from_short(uncoupled_idx);
 
-//                        cout << "239::old: Join(" << coupled_idx << "; [" << uncoupled_idx << "])" << endl;
+                       cout << "239::old: Join(" << coupled_idx << "; [" << uncoupled_idx << "])" << endl;
                         ecdag->Join(real_coupled_idx, {real_uncoupled_idx}, {1});
                     
                     } else if (z_vec[y] < x) {
@@ -276,7 +298,7 @@ void Clay::decode_erasures(vector<int> erased_chunks, int z, ECDAG* ecdag) {
                     int real_coupled_idx = get_real_from_short(coupled_idx);
                     int real_uncoupled_idx = get_real_from_short(uncoupled_idx);
 
-//                    cout << "278::old: Join(" << uncoupled_idx << "; [" << coupled_idx << "])" << endl;
+                   cout << "278::old: Join(" << uncoupled_idx << "; [" << coupled_idx << "])" << endl;
                     ecdag->Join(real_uncoupled_idx, {real_coupled_idx}, {1});
                 }
             }
@@ -332,7 +354,7 @@ vector<int> Clay::get_uncoupled_from_coupled(int x, int y, int z, int* z_vec, EC
         realdata.push_back(tmprealidx);
     }
 
-//    cout << "333::old: Join(" << idx2 << "; [" << data[0] << ", " << data[1] << "])" << endl;
+   cout << "333::old: Join(" << idx2 << "; [" << data[0] << ", " << data[1] << "])" << endl;
     ecdag->Join(real_idx2, realdata, coef2);
     toret.push_back(real_idx2);
 
@@ -345,7 +367,7 @@ vector<int> Clay::get_uncoupled_from_coupled(int x, int y, int z, int* z_vec, EC
     //ecdag->Join(idx3, data, coef3);
 
     int real_idx3 = get_real_from_short(idx3);
-//    cout << "345::old: Join(" << idx3 << "; [" << data[0] << ", " << data[1] << "])" << endl;
+   cout << "345::old: Join(" << idx3 << "; [" << data[0] << ", " << data[1] << "])" << endl;
     ecdag->Join(real_idx3, realdata, coef3);
     toret.push_back(real_idx3);
 
@@ -410,7 +432,7 @@ void Clay::get_coupled_from_uncoupled(int x, int y, int z, int* z_vec, ECDAG* ec
         realdata.push_back(tmprealidx);
     }
 
-//    cout << "405::old: Join(" << idx0 << "; [" << data[0] << ", " << data[1] << "])" << endl;
+   cout << "405::old: Join(" << idx0 << "; [" << data[0] << ", " << data[1] << "])" << endl;
     ecdag->Join(real_idx0, realdata, coef0);
 
     // calculate idx1
@@ -422,7 +444,7 @@ void Clay::get_coupled_from_uncoupled(int x, int y, int z, int* z_vec, ECDAG* ec
     //ecdag->Join(idx1, data, coef1);
 
     int real_idx1 = get_real_from_short(idx1);
-//    cout << "417::old: Join(" << idx1 << "; [" << data[0] << ", " << data[1] << "])" << endl;
+   cout << "417::old: Join(" << idx1 << "; [" << data[0] << ", " << data[1] << "])" << endl;
     ecdag->Join(real_idx1, realdata, coef1);
 
     //ecdag->BindX({idx0, idx1});
@@ -494,7 +516,7 @@ vector<int> Clay::get_coupled1_from_pair02(int x, int y, int z, int* z_vec, ECDA
         realdata.push_back(tmprealidx);
     }
 
-//    cout << "484::old: Join(" << idx1 << "; [" << data[0] << ", " << data[1] << "])" << endl;
+   cout << "484::old: Join(" << idx1 << "; [" << data[0] << ", " << data[1] << "])" << endl;
     ecdag->Join(real_idx1, realdata, coef);
     toret.push_back(real_idx1);
     return toret;
@@ -565,7 +587,7 @@ vector<int> Clay::get_coupled0_from_pair13(int x, int y, int z, int* z_vec, ECDA
         realdata.push_back(tmprealidx);
     }
 
-//    cout << "548::old: Join(" << idx0 << "; [" << data[0] << ", " << data[1] << "])" << endl;
+   cout << "548::old: Join(" << idx0 << "; [" << data[0] << ", " << data[1] << "])" << endl;
     ecdag->Join(real_idx0, realdata, coef);
     toret.push_back(real_idx0);
     return toret;
@@ -592,6 +614,14 @@ vector<int> Clay::decode_uncoupled(vector<int> erased_chunks, int z, ECDAG* ecda
         if (select_lines.size() == _mds_k)
             break;
     }
+
+    for (int i=0; i<data.size(); i++) {
+        int idx = data[i];
+        if (_identical.find(idx) != _identical.end())
+            data[i] = _identical[idx];
+    }
+
+
 
     int _select_matrix[_mds_k*_mds_k];
     for (int i=0; i<_mds_k; i++) {
@@ -622,6 +652,14 @@ vector<int> Clay::decode_uncoupled(vector<int> erased_chunks, int z, ECDAG* ecda
         int targetidx = cidx * _w + z + (_n+_nu) * _w;
         //ecdag->Join(targetidx, data, coef);
 
+//        cout << "674 before: targetidx = " << targetidx << endl;
+        if (_identical.find(targetidx) != _identical.end())
+            targetidx = _identical[targetidx];
+//        cout << "677 after: targetidx = " << targetidx << endl;
+
+        //if (_encode & targetidx < (_n + _nu) * _w)
+        //    continue;
+
         int real_targetidx = get_real_from_short(targetidx);
         vector<int> realdata;
         for (auto tmpidx: data) {
@@ -629,7 +667,7 @@ vector<int> Clay::decode_uncoupled(vector<int> erased_chunks, int z, ECDAG* ecda
             realdata.push_back(tmprealidx);
         }
 
-//        cout << "605::old: Join(" << targetidx << "; [" << data[0] << ", " << data[1] << "])" << endl;
+       cout << "605::old: Join(" << targetidx << "; [" << data[0] << ", " << data[1] << "])" << endl;
         ecdag->Join(real_targetidx, realdata, coef);
         toret.push_back(real_targetidx);
     }
@@ -705,6 +743,7 @@ int Clay::get_repair_sub_chunk_count(vector<int> want_to_read) {
 }
 
 ECDAG* Clay::Decode(vector<int> from, vector<int> to) {
+    _encode = false;
     cout << "Clay::Decode" << endl;
     ECDAG* ecdag = new ECDAG();
 
@@ -768,7 +807,6 @@ ECDAG* Clay::Decode(vector<int> from, vector<int> to) {
     }
 
     assert(helper_data.size() + aloof_nodes.size() + recovered_data.size() == _q*_t);
-
     repair_one_lost_chunk(recovered_data, aloof_nodes,
             helper_data, repair_sub_chunks_ind, ecdag);
 
@@ -816,6 +854,13 @@ void Clay::repair_one_lost_chunk(unordered_map<int, bool>& recovered_data,
 
         for (int j = index; j < index + count; j++) {
             get_plane_vector(j, z_vec);
+
+            // if (true) {
+            //     cout << "plane vector: ( ";
+            //     for (int ii=0; ii<_t; ii++)
+            //         cout << z_vec[ii] << " ";
+            //     cout << ")" << endl;
+            // }
 
             int order = 0;
             // check across all erasures and aloof nodes
@@ -868,6 +913,11 @@ void Clay::repair_one_lost_chunk(unordered_map<int, bool>& recovered_data,
         orderlist.push_back(order);
     }
     sort(orderlist.begin(), orderlist.end());
+    // cout << "orderlist\n";
+    // for (auto i : orderlist) {
+    //     cout << i << ", ";
+    // }
+    // cout << endl;
 
     vector<int> list1;
     vector<int> list2;
@@ -899,8 +949,10 @@ void Clay::repair_one_lost_chunk(unordered_map<int, bool>& recovered_data,
                             int real_coupled_idx = get_real_from_short(coupled_idx);
                             int real_uncoupled_idx = get_real_from_short(uncoupled_idx);
 
-//                            cout << "878::old: Join(" << uncoupled_idx << "; [" << coupled_idx << "])" << endl;
-                            ecdag->Join(real_uncoupled_idx, {real_coupled_idx}, {1});
+                           cout << "878::old: Join(" << uncoupled_idx << "; [" << coupled_idx << "])" << endl;
+                            // cout << "real_uncoupled_idx:" << real_uncoupled_idx 
+                            //     << ", real_coupled_idx:" << real_coupled_idx << endl;
+                            // ecdag->Join(real_uncoupled_idx, {real_coupled_idx}, {1});
                             list1.push_back(real_uncoupled_idx);
                         } else if (z_vec[y] < x) {
                             vector<int> tmplist = get_uncoupled_from_coupled(x, y, z, z_vec, ecdag);
@@ -940,8 +992,8 @@ void Clay::repair_one_lost_chunk(unordered_map<int, bool>& recovered_data,
                     int real_coupled_idx = get_real_from_short(coupled_idx);
                     int real_uncoupled_idx = get_real_from_short(uncoupled_idx);
                     
-//                    cout << "914::old: Join(" << coupled_idx << "; [" << uncoupled_idx << "])" << endl;
-                    ecdag->Join(real_coupled_idx, {real_uncoupled_idx}, {1});
+                //    cout << "914::old: Join(" << coupled_idx << "; [" << uncoupled_idx << "])" << endl;
+                    // ecdag->Join(real_coupled_idx, {real_uncoupled_idx}, {1});
                     list3.push_back(real_coupled_idx);
                 } else {
                     if (find(aloof_nodes.begin(), aloof_nodes.end(), i) != aloof_nodes.end())
